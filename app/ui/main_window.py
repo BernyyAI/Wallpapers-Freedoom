@@ -1,10 +1,11 @@
 from pathlib import Path
+import json
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
     QPushButton, QMessageBox, QLabel,
     QGridLayout, QScrollArea, QSizePolicy, QHBoxLayout, QLineEdit,
-    QGraphicsBlurEffect
+    QGraphicsBlurEffect, QFrame
 )
 from PySide6.QtGui import QPixmap, QMovie
 from PySide6.QtCore import Qt, QTimer
@@ -17,6 +18,7 @@ from app.workers.gallery_worker import GalleryWorker
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+FAVORITES_FILE = BASE_DIR / "assets" / "favorites.json"
 
 
 class MainWindow(QMainWindow):
@@ -111,6 +113,7 @@ class MainWindow(QMainWindow):
 
         central_widget.setStyleSheet("background: transparent;")
         
+        self.favorites = self.load_favorites()
 
         buttons_layout = QHBoxLayout()
 
@@ -140,6 +143,22 @@ class MainWindow(QMainWindow):
         search_layout.addWidget(self.search_button, stretch=1)
         
         layout.addLayout(search_layout)
+
+        filter_layout = QHBoxLayout()
+        
+        self.show_all_button = QPushButton("Todos")
+        self.show_all_button.setStyleSheet(button_style)
+        self.show_all_button.clicked.connect(self.show_all_wallpapers)
+        
+        self.show_favorites_button = QPushButton("Favoritos")
+        self.show_favorites_button.setStyleSheet(button_style)
+        self.show_favorites_button.clicked.connect(self.show_favorites_only)
+        
+        filter_layout.addWidget(self.show_all_button)
+        filter_layout.addWidget(self.show_favorites_button)
+        filter_layout.addStretch()
+        
+        layout.addLayout(filter_layout)
 
         self.selected_info = QLabel("Seleccionado: ninguno")
         self.selected_info.setStyleSheet("color: #cccccc;")
@@ -203,6 +222,7 @@ class MainWindow(QMainWindow):
         self.selected_wallpaper = None
         self.selected_label = None
         self.worker = None
+        self.current_filter = "all"  
 
         
         self.load_button.clicked.connect(self.load_gallery)
@@ -215,6 +235,73 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(0, self.reflow_gallery)
 
+    def load_favorites(self):
+        """Cargar lista de favoritos desde archivo JSON"""
+        if FAVORITES_FILE.exists():
+            try:
+                with open(FAVORITES_FILE, 'r') as f:
+                    return set(json.load(f))
+            except:
+                return set()
+        return set()
+
+    def save_favorites(self):
+        """Guardar favoritos en archivo JSON"""
+        FAVORITES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(FAVORITES_FILE, 'w') as f:
+            json.dump(list(self.favorites), f)
+
+    def toggle_favorite(self, img_path: str, star_label: QLabel):
+        """Alternar estado de favorito"""
+        if img_path in self.favorites:
+            self.favorites.remove(img_path)
+            star_label.setText("☆")
+            star_label.setStyleSheet("""
+                QLabel {
+                    color: #666;
+                    font-size: 24px;
+                    background: transparent;
+                }
+                QLabel:hover {
+                    color: #ff9800;
+                }
+            """)
+        else:
+            self.favorites.add(img_path)
+            star_label.setText("☆")
+            star_label.setStyleSheet("""
+                QLabel {
+                    color: #ff9800;
+                    font-size: 24px;
+                    background: transparent;
+                }
+                QLabel:hover {
+                    color: #ffb84d;
+                }
+            """)
+        
+        self.save_favorites()
+
+    def show_all_wallpapers(self):
+        """Mostrar todos los wallpapers"""
+        self.current_filter = "all"
+        self.reload_gallery_view()
+
+    def show_favorites_only(self):
+        """Mostrar solo favoritos"""
+        self.current_filter = "favorites"
+        self.reload_gallery_view()
+
+    def reload_gallery_view(self):
+        """Recargar la vista de la galería según el filtro actual"""
+
+        while self.gallery_layout.count():
+            item = self.gallery_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        self.load_gallery_from_disk()
 
     def search_wallpapers(self):
         query = self.search_input.text().strip()
@@ -253,9 +340,17 @@ class MainWindow(QMainWindow):
             if img_path.name.endswith("_thumb.jpg"):
                 continue
 
+            if self.current_filter == "favorites" and str(img_path) not in self.favorites:
+                continue
+
             thumb_path = img_path.with_name(img_path.stem + "_thumb.jpg")
             if not thumb_path.exists():
                 continue
+
+            container = QWidget()
+            container_layout = QVBoxLayout(container)
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.setSpacing(0)
 
             label = QLabel()
             pixmap = QPixmap(str(thumb_path))
@@ -275,7 +370,39 @@ class MainWindow(QMainWindow):
             label.setProperty("wallpaper_path", str(img_path))
             label.mousePressEvent = lambda e, l=label: self.on_wallpaper_clicked(l)
 
-            self.gallery_layout.addWidget(label, row, col)
+            star_label = QLabel("☆" if str(img_path) in self.favorites else "☆")
+            star_label.setAlignment(Qt.AlignCenter)
+            star_label.setCursor(Qt.PointingHandCursor)
+            
+            if str(img_path) in self.favorites:
+                star_label.setStyleSheet("""
+                    QLabel {
+                        color: #ff9800;
+                        font-size: 24px;
+                        background: transparent;
+                    }
+                    QLabel:hover {
+                        color: #ffb84d;
+                    }
+                """)
+            else:
+                star_label.setStyleSheet("""
+                    QLabel {
+                        color: #666;
+                        font-size: 24px;
+                        background: transparent;
+                    }
+                    QLabel:hover {
+                        color: #ff9800;
+                    }
+                """)
+
+            star_label.mousePressEvent = lambda e, p=str(img_path), s=star_label: self.toggle_favorite(p, s)
+
+            container_layout.addWidget(label)
+            container_layout.addWidget(star_label)
+
+            self.gallery_layout.addWidget(container, row, col)
 
             col += 1
             if col >= columns:
@@ -310,6 +437,11 @@ class MainWindow(QMainWindow):
         self.search_input.setEnabled(True)
 
     def add_wallpaper(self, img_path, thumb_path):
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+
         label = QLabel()
         pixmap = QPixmap(str(thumb_path))
 
@@ -365,7 +497,40 @@ class MainWindow(QMainWindow):
         label.setProperty("wallpaper_path", str(img_path))
         label.mousePressEvent = lambda e, l=label: self.on_wallpaper_clicked(l)
 
-        self.gallery_layout.addWidget(label)
+        # Estrella de favorito
+        star_label = QLabel("⭐" if str(img_path) in self.favorites else "☆")
+        star_label.setAlignment(Qt.AlignCenter)
+        star_label.setCursor(Qt.PointingHandCursor)
+        
+        if str(img_path) in self.favorites:
+            star_label.setStyleSheet("""
+                QLabel {
+                    color: #ff9800;
+                    font-size: 24px;
+                    background: transparent;
+                }
+                QLabel:hover {
+                    color: #ffb84d;
+                }
+            """)
+        else:
+            star_label.setStyleSheet("""
+                QLabel {
+                    color: #666;
+                    font-size: 24px;
+                    background: transparent;
+                }
+                QLabel:hover {
+                    color: #ff9800;
+                }
+            """)
+
+        star_label.mousePressEvent = lambda e, p=str(img_path), s=star_label: self.toggle_favorite(p, s)
+
+        container_layout.addWidget(label)
+        container_layout.addWidget(star_label)
+
+        self.gallery_layout.addWidget(container)
 
 
     def on_gallery_error(self, message):
@@ -453,9 +618,16 @@ class MainWindow(QMainWindow):
             if thumb_path.exists():
                 thumb_path.unlink()
 
+
+            if str(img_path) in self.favorites:
+                self.favorites.remove(str(img_path))
+                self.save_favorites()
+
             
-            self.gallery_layout.removeWidget(self.selected_label)
-            self.selected_label.deleteLater()
+
+            parent = self.selected_label.parent()
+            self.gallery_layout.removeWidget(parent)
+            parent.deleteLater()
 
             
             self.selected_label = None
