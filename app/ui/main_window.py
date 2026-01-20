@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
     QPushButton, QMessageBox, QLabel,
-    QGridLayout, QScrollArea, QSizePolicy, QHBoxLayout, QApplication,
+    QGridLayout, QScrollArea, QSizePolicy, QHBoxLayout, QLineEdit,
     QGraphicsBlurEffect
 )
 from PySide6.QtGui import QPixmap, QMovie
@@ -76,6 +76,26 @@ class MainWindow(QMainWindow):
                 }
                 """
 
+        search_style = """
+                QLineEdit {
+                    background-color: #1e1e1e;
+                    color: #eaeaea;
+                    border: 1px solid #2a2a2a;
+                    border-radius: 10px;
+                    padding: 8px 18px;
+                    font-size: 13px;
+                }
+
+                QLineEdit:focus {
+                    border-color: #ff9800;
+                    background-color: #242424;
+                }
+
+                QLineEdit::placeholder {
+                    color: #666;
+                }
+                """
+
 
         self.setWindowTitle("Wallpaper Freedom")
         self.resize(1000, 700)
@@ -84,8 +104,7 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-
-                
+        
         layout = QVBoxLayout()
         
         central_widget.setLayout(layout)
@@ -93,13 +112,10 @@ class MainWindow(QMainWindow):
         central_widget.setStyleSheet("background: transparent;")
         
 
-
         buttons_layout = QHBoxLayout()
 
         
         self.apply_button = QPushButton("Aplicar Wallpaper")
-
-        
         
         buttons_layout.addWidget(self.apply_button)
 
@@ -108,6 +124,23 @@ class MainWindow(QMainWindow):
         
         self.load_button = QPushButton("Cargar Galería")
         layout.addWidget(self.load_button)
+
+        search_layout = QHBoxLayout()
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Buscar wallpapers (ej: nature, city, ocean)...")
+        self.search_input.setStyleSheet(search_style)
+        self.search_input.returnPressed.connect(self.search_wallpapers)
+        
+        self.search_button = QPushButton("Buscar")
+        self.search_button.setStyleSheet(button_style)
+        self.search_button.clicked.connect(self.search_wallpapers)
+        
+        search_layout.addWidget(self.search_input, stretch=4)
+        search_layout.addWidget(self.search_button, stretch=1)
+        
+        layout.addLayout(search_layout)
+
         self.selected_info = QLabel("Seleccionado: ninguno")
         self.selected_info.setStyleSheet("color: #cccccc;")
         layout.addWidget(self.selected_info)
@@ -180,9 +213,29 @@ class MainWindow(QMainWindow):
         self.wallpaper_labels = []
         
 
-
         QTimer.singleShot(0, self.reflow_gallery)
 
+
+    def search_wallpapers(self):
+        query = self.search_input.text().strip()
+        
+        if not query:
+            QMessageBox.warning(
+                self,
+                "Atención",
+                "Ingresá un término de búsqueda"
+            )
+            return
+        
+        self.search_button.setEnabled(False)
+        self.search_input.setEnabled(False)
+        self.load_button.setEnabled(False)
+        self.show_loader()
+
+        self.worker = GalleryWorker(query=query)
+        self.worker.finished.connect(self.on_gallery_loaded)
+        self.worker.error.connect(self.on_gallery_error)
+        self.worker.start()
 
 
     def load_gallery_from_disk(self):
@@ -252,6 +305,9 @@ class MainWindow(QMainWindow):
             self.add_wallpaper(img_path, thumb_path)
 
         self.reflow_gallery()
+        
+        self.search_button.setEnabled(True)
+        self.search_input.setEnabled(True)
 
     def add_wallpaper(self, img_path, thumb_path):
         label = QLabel()
@@ -314,6 +370,9 @@ class MainWindow(QMainWindow):
 
     def on_gallery_error(self, message):
         self.hide_loader()
+        
+        self.search_button.setEnabled(True)
+        self.search_input.setEnabled(True)
 
         QMessageBox.critical(self, "Error", message)
 

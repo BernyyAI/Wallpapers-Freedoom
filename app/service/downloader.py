@@ -41,7 +41,7 @@ def download_random_wallpaper(query="wallpaper"):
 
     return file_path
 
-def download_wallpaper_list(query="anime wallpaper", count=6, max_attempts=20):
+def download_wallpaper_list(query="wallpaper", count=6, max_attempts=20):
     WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
 
     existing_ids = get_existing_wallpapers(WALLPAPER_DIR)
