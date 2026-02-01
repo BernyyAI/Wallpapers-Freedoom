@@ -1,8 +1,22 @@
 import requests
 from pathlib import Path
 import random
+import sys
+import os
 
-WALLPAPER_DIR = Path(__file__).resolve().parent.parent / "assets" / "wallpaperss"
+def get_wallpaper_dir():
+    if getattr(sys, 'frozen', False):
+        # Usar AppData cuando esté empaquetado
+        appdata = Path(os.getenv('APPDATA'))
+        wallpaper_dir = appdata / "Wallpaper Freedom" / "wallpaperss"
+    else:
+        # En desarrollo
+        wallpaper_dir = Path(__file__).resolve().parent.parent / "assets" / "wallpaperss"
+    
+    wallpaper_dir.mkdir(parents=True, exist_ok=True)
+    return wallpaper_dir
+
+WALLPAPER_DIR = get_wallpaper_dir()
 
 UNSPLASH_ACCESS_KEY = "sCDDEz4gbv1AqxU3tYyKNX1ABXyXdOV4KISFHjH-bAc"
 
@@ -41,7 +55,7 @@ def download_random_wallpaper(query="wallpaper"):
 
     return file_path
 
-def download_wallpaper_list(query="wallpaper", count=6, max_attempts=20):
+def download_wallpaper_list(query="wallpaper", count=6, max_attempts=20, worker=None):
     WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
 
     existing_ids = get_existing_wallpapers(WALLPAPER_DIR)
@@ -56,6 +70,9 @@ def download_wallpaper_list(query="wallpaper", count=6, max_attempts=20):
     while len(downloaded) < count and attempts < max_attempts:
         attempts += 1
 
+        if worker and hasattr(worker, '_is_cancelled') and worker._is_cancelled:
+            break
+        
         params = {
             "query": query,
             "orientation": "landscape",
